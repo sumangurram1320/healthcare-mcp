@@ -1,3 +1,7 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
+
 const medicalIssues = [
   {
     issue_id: "MI1001",
@@ -81,61 +85,136 @@ const medicalIssues = [
   }
 ];
 
-module.exports = async (req, res) => {
-  const {
-    action,
-    issue_id,
-    title,
-    customer_id
-  } = req.query;
+function createServer() {
+  const server = new McpServer({
+    name: "healthcare-medical-issue",
+    version: "1.0.0"
+  });
 
-  try {
-
-    // Get issue by ID
-    if (action === "get_medical_issue_details_by_id") {
+  server.tool(
+    "get_medical_issue_details_by_id",
+    "Get complete details of a medical issue using its issue ID.",
+    {
+      issue_id: z.string().describe("Medical issue ID, for example MI1001")
+    },
+    async ({ issue_id }) => {
       const issue = medicalIssues.find(
         item => item.issue_id === issue_id
       );
 
       if (!issue) {
-        return res.status(404).json({
-          error: "Medical issue not found"
-        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `No medical issue found with ID ${issue_id}.`
+            }
+          ]
+        };
       }
 
-      return res.status(200).json(issue);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(issue, null, 2)
+          }
+        ]
+      };
     }
+  );
 
-    // Get issue by title
-    if (action === "get_medical_issue_by_title") {
+  server.tool(
+    "get_medical_issue_by_title",
+    "Find medical issues using the medical issue title.",
+    {
+      title: z.string().describe("Medical issue title, for example Fever")
+    },
+    async ({ title }) => {
       const issues = medicalIssues.filter(
-        item => item.title.toLowerCase() === title?.toLowerCase()
+        item => item.title.toLowerCase() === title.toLowerCase()
       );
 
-      return res.status(200).json(issues);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(issues, null, 2)
+          }
+        ]
+      };
     }
+  );
 
-    // Get all medical issues
-    if (action === "get_list_medical_issues") {
-      return res.status(200).json(medicalIssues);
+  server.tool(
+    "get_list_medical_issues",
+    "Get the complete list of available medical issues.",
+    {},
+    async () => {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(medicalIssues, null, 2)
+          }
+        ]
+      };
     }
+  );
 
-    // Get customer's medical issues
-    if (action === "get_customer_medical_issues") {
+  server.tool(
+    "get_customer_medical_issues",
+    "Get all medical issues reported by a specific customer.",
+    {
+      customer_id: z.string().describe(
+        "Customer ID, for example HCID1001"
+      )
+    },
+    async ({ customer_id }) => {
       const issues = medicalIssues.filter(
         item => item.customer_id === customer_id
       );
 
-      return res.status(200).json(issues);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(issues, null, 2)
+          }
+        ]
+      };
     }
+  );
 
-    return res.status(400).json({
-      error: "Invalid action"
-    });
+  return server;
+}
 
-  } catch (error) {
-    return res.status(500).json({
-      error: error.message
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Method Not Allowed",
+      message: "MCP endpoint requires POST requests."
     });
   }
-};
+
+  try {
+    const server = createServer();
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined
+    });
+
+    await server.connect(transport);
+
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("MCP Error:", error);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: error.message
+      });
+    }
+  }
+}
