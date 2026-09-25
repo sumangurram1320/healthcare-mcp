@@ -95,29 +95,22 @@ function createServer() {
     "get_medical_issue_details_by_id",
     "Get complete details of a medical issue using its issue ID.",
     {
-      issue_id: z.string().describe("Medical issue ID, for example MI1001")
+      issue_id: z.string()
     },
     async ({ issue_id }) => {
       const issue = medicalIssues.find(
-        item => item.issue_id === issue_id
+        x => x.issue_id === issue_id
       );
-
-      if (!issue) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No medical issue found with ID ${issue_id}.`
-            }
-          ]
-        };
-      }
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(issue, null, 2)
+            text: JSON.stringify(
+              issue || { message: "Medical issue not found" },
+              null,
+              2
+            )
           }
         ]
       };
@@ -128,18 +121,18 @@ function createServer() {
     "get_medical_issue_by_title",
     "Find medical issues using the medical issue title.",
     {
-      title: z.string().describe("Medical issue title, for example Fever")
+      title: z.string()
     },
     async ({ title }) => {
-      const issues = medicalIssues.filter(
-        item => item.title.toLowerCase() === title.toLowerCase()
+      const result = medicalIssues.filter(
+        x => x.title.toLowerCase() === title.toLowerCase()
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(issues, null, 2)
+            text: JSON.stringify(result, null, 2)
           }
         ]
       };
@@ -148,7 +141,7 @@ function createServer() {
 
   server.tool(
     "get_list_medical_issues",
-    "Get the complete list of available medical issues.",
+    "Get the complete list of medical issues.",
     {},
     async () => {
       return {
@@ -164,22 +157,20 @@ function createServer() {
 
   server.tool(
     "get_customer_medical_issues",
-    "Get all medical issues reported by a specific customer.",
+    "Get all medical issues reported by a customer.",
     {
-      customer_id: z.string().describe(
-        "Customer ID, for example HCID1001"
-      )
+      customer_id: z.string()
     },
     async ({ customer_id }) => {
-      const issues = medicalIssues.filter(
-        item => item.customer_id === customer_id
+      const result = medicalIssues.filter(
+        x => x.customer_id === customer_id
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(issues, null, 2)
+            text: JSON.stringify(result, null, 2)
           }
         ]
       };
@@ -190,14 +181,14 @@ function createServer() {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Method Not Allowed",
-      message: "MCP endpoint requires POST requests."
-    });
-  }
-
   try {
+    if (req.method !== "POST") {
+      res.status(405).json({
+        error: "Only POST requests are supported"
+      });
+      return;
+    }
+
     const server = createServer();
 
     const transport = new StreamableHTTPServerTransport({
@@ -207,13 +198,13 @@ export default async function handler(req, res) {
     await server.connect(transport);
 
     await transport.handleRequest(req, res, req.body);
+
   } catch (error) {
     console.error("MCP Error:", error);
 
     if (!res.headersSent) {
       res.status(500).json({
-        error: "Internal Server Error",
-        message: error.message
+        error: error.message
       });
     }
   }
